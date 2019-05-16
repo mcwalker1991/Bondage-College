@@ -78,7 +78,11 @@ function InformationSheetRun() {
 				DrawText(TextGet("Skill" + C.Skill[S].Type) + " " + C.Skill[S].Level.toString() + " (" + Math.floor(C.Skill[S].Progress / 10) + "%)", 1450, 200 + S * 75, "Black", "Gray");
 			if (C.Skill.length == 0) DrawText(TextGet("SkillNone"), 1450, 200, "Black", "Gray");
 		}
-	
+
+		// Draw the player skill modifier if there's one
+		if ((C.ID == 0) && (SkillModifier != 0))
+			DrawText(TextGet("SkillModifier") + " " + SkillModifier, 1450, 500, "Black", "Gray");
+
 	} else {
 
 		// For NPC characters, we show the traits

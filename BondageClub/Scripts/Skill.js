@@ -1,4 +1,7 @@
 "use strict";
+var SkillModifier = 0;
+var SkillLevelMaximum = 10;
+var SkillLevelMinimum = -5;
 
 // Pushes the skill progression to the server
 function SkillSave(S) {
@@ -51,6 +54,18 @@ function SkillLoad(NewSkill) {
 // Returns a specific skill level from a character
 function SkillGetLevel(C, SkillType) {
 	for (var S = 0; S < C.Skill.length; S++)
+		if (C.Skill[S].Type == SkillType) {
+			var Level = (C.Skill[S].Level + SkillModifier);
+			if (Level > SkillLevelMaximum) Level = SkillLevelMaximum;
+			if (Level < SkillLevelMinimum) Level = SkillLevelMinimum;
+			return Level;
+		}
+	return 0;
+}
+
+// Returns a specific skill level from a character
+function SkillGetLevelReal(C, SkillType) {
+	for (var S = 0; S < C.Skill.length; S++)
 		if (C.Skill[S].Type == SkillType)
 			return C.Skill[S].Level;
 	return 0;
@@ -68,7 +83,7 @@ function SkillGetProgress(C, SkillType) {
 function SkillProgress(SkillType, SkillProgress) {
 
 	// Makes sure there's a progress, we cannot go beyond level 10
-	var L = SkillGetLevel(Player, SkillType);
+	var L = SkillGetLevelReal(Player, SkillType);
 	var P = Math.round(SkillProgress * 3 / ((L * L) + 1));
 	P = P * CheatFactor("DoubleSkill", 2);
 	if ((P > 0) && (L < 10)) {
@@ -87,13 +102,14 @@ function SkillProgress(SkillType, SkillProgress) {
 
 }
 
-// Retard Skill level
-function SkillRetard(SkillType) {
-	if (SkillGetLevel(Player, SkillType) > 0 || SkillGetProgress(Player, SkillType) > 0) {
-		var L = SkillGetLevel(Player, SkillType)
-		if (SkillGetProgress(Player, SkillType) == 0) { 
-			if (SkillGetLevel(Player, SkillType) > 0) L = L - 1;
-		}
-		SkillChange(SkillType, L, 0);
-	}
+// Alters the current skill modifier for the player
+function SkillModifierChange(Change) {
+	SkillModifier = SkillModifier + Change;
+	if (SkillModifier < -10) SkillModifier = -10;
+	if (SkillModifier > 10) SkillModifier = 10;
+}
+
+// Remove any skill modifier
+function SkillModifierReset() {
+	SkillModifier = 0;
 }
