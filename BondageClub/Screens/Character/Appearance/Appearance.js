@@ -7,8 +7,12 @@ var CharacterAppearanceBackup = null;
 var CharacterAppearanceAssets = [];
 var CharacterAppearanceColorPicker = "";
 var CharacterAppearanceColorPickerBackup = "";
+var CharacterAppearanceSelection = null;
 var CharacterAppearanceReturnRoom = "MainHall";
 var CharacterAppearanceReturnModule = "Room";
+var CharacterAppearanceWardrobeOffset = 0;
+var CharacterAppearanceWardrobeMode = false;
+var CharacterAppearanceWardrobeText = "";
 
 // Builds all the assets that can be used to dress up the character
 function CharacterAppearanceBuildAssets(C) {
@@ -40,7 +44,6 @@ function CharacterAppearanceValidate(C) {
 			}
 
 		// Remove items flagged as "Remove At Login"
-		var Refresh = false;
 		for(var A = 0; A < C.Appearance.length; A++)
 			if (C.Appearance[A].Asset.RemoveAtLogin) {
 				C.Appearance.splice(A, 1);
@@ -108,9 +111,10 @@ function CharacterAppearanceRequired(C, GroupName) {
 
 // Returns TRUE if the item group must be hidden and not chosen
 function CharacterAppearanceMustHide(C, GroupName) {
-	for (var A = 0; A < C.Appearance.length; A++)
-		if ((C.Appearance[A].Asset.Hide != null) && (C.Appearance[A].Asset.Hide.indexOf(GroupName) >= 0))
-			return true;
+	for (var A = 0; A < C.Appearance.length; A++) {
+		if ((C.Appearance[A].Asset.Hide != null) && (C.Appearance[A].Asset.Hide.indexOf(GroupName) >= 0)) return true;
+		if ((C.Appearance[A].Property != null) && (C.Appearance[A].Property.Hide != null) && (C.Appearance[A].Property.Hide.indexOf(GroupName) >= 0)) return true;
+	}
 	return false;
 }
 
@@ -201,12 +205,11 @@ function CharacterAppearanceSort(AP) {
 
 // Returns TRUE if we can show the item group
 function CharacterAppearanceVisible(C, AssetName, GroupName) {
-	for (var A = 0; A < C.Appearance.length; A++)
-		if ((C.Appearance[A].Asset.Hide != null) && (C.Appearance[A].Asset.Hide.indexOf(GroupName) >= 0))
-			return false;
-	for (var A = 0; A < C.Appearance.length; A++)
-		if ((C.Appearance[A].Asset.HideItem != null) && (C.Appearance[A].Asset.HideItem.indexOf(GroupName + AssetName) >= 0))
-			return false;
+	for (var A = 0; A < C.Appearance.length; A++) {
+		if ((C.Appearance[A].Asset.Hide != null) && (C.Appearance[A].Asset.Hide.indexOf(GroupName) >= 0)) return false;
+		if ((C.Appearance[A].Property != null) && (C.Appearance[A].Property.Hide != null) && (C.Appearance[A].Property.Hide.indexOf(GroupName) >= 0)) return false;
+		if ((C.Appearance[A].Asset.HideItem != null) && (C.Appearance[A].Asset.HideItem.indexOf(GroupName + AssetName) >= 0)) return false;
+	}
 	if (C.Pose != null)
 		for (var A = 0; A < C.Pose.length; A++)
 			for (var P = 0; P < Pose.length; P++)
@@ -237,7 +240,8 @@ function CharacterAppearanceBuildCanvas(C) {
 	
 	// Loops in all items worn by the character
 	for (var A = 0; A < C.Appearance.length; A++) 
-		if (CharacterAppearanceVisible(C, C.Appearance[A].Asset.Name, C.Appearance[A].Asset.Group.Name)) {
+	  // Only draw if the asset is visible
+		if (C.Appearance[A].Asset.Visible && CharacterAppearanceVisible(C, C.Appearance[A].Asset.Name, C.Appearance[A].Asset.Group.Name)) {
 
 			// If there's a father group, we must add it to find the correct image
 			var CA = C.Appearance[A];
@@ -267,26 +271,38 @@ function CharacterAppearanceBuildCanvas(C) {
 					C.CanvasBlink.getContext("2d").clearRect(CA.Asset.Alpha[AL][0], CA.Asset.Alpha[AL][1], CA.Asset.Alpha[AL][2], CA.Asset.Alpha[AL][3]);
 				}
 			
-			// Draw the item on the canvas (default or empty means no special color, # means apply a color, regular text means we apply that text)
-			if (CA.Asset.Visible) {
-				if ((CA.Color == null) || (CA.Color == "Default") || (CA.Color == "")) {
-					DrawImageCanvas("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + CA.Asset.Name + G + ".png", C.Canvas.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop);
-					if (!CA.Asset.Group.DrawingBlink) DrawImageCanvas("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + CA.Asset.Name + G + ".png", C.CanvasBlink.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop);
+			// Check if we need to draw a different expression (for facial features)
+			var Expression = "";
+			if ((CA.Asset.Group.AllowExpression != null) && (CA.Asset.Group.AllowExpression.length > 0))
+				if ((CA.Property && CA.Property.Expression && CA.Asset.Group.AllowExpression.indexOf(CA.Property.Expression) >= 0))
+					Expression = CA.Property.Expression + "/";
+
+			// Check if we need to draw a different variation (from type property)
+			var Variation = "";
+			if ((CA.Property != null) && (CA.Property.Type != null)) Variation = CA.Property.Type;
+			
+			// Cycle through all layers of the image
+			var MaxLayer = (CA.Asset.Layer == null) ? 1 : CA.Asset.Layer.length;
+			for (var L = 0; L < MaxLayer; L++) {
+
+				// Draw the item on the canvas (default or empty means no special color, # means apply a color, regular text means we apply that text)
+				var Layer = (CA.Asset.Layer == null) ? "" : "_" + CA.Asset.Layer[L].Name;
+				if ((CA.Color != null) && (CA.Color.indexOf("#") == 0) && ((CA.Asset.Layer == null) || CA.Asset.Layer[L].AllowColorize)) {
+					DrawImageCanvasColorize("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + Expression + CA.Asset.Name + G + Variation + Layer + ".png", C.Canvas.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop, 1, CA.Color, CA.Asset.Group.DrawingFullAlpha);
+					if (!CA.Asset.Group.DrawingBlink) DrawImageCanvasColorize("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + Expression + CA.Asset.Name + G + Variation + Layer + ".png", C.CanvasBlink.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop, 1, CA.Color, CA.Asset.Group.DrawingFullAlpha);
+				} else {
+					var Color = ((CA.Color == null) || (CA.Color == "Default") || (CA.Color == "") || (CA.Color.indexOf("#") == 0)) ? "" : "_" + CA.Color;
+					DrawImageCanvas("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + Expression + CA.Asset.Name + G + Variation + Color + Layer + ".png", C.Canvas.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop);
+					if (!CA.Asset.Group.DrawingBlink) DrawImageCanvas("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + Expression + CA.Asset.Name + G + Variation + Color + Layer + ".png", C.CanvasBlink.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop);
 				}
-				else {
-					if (CA.Color.indexOf("#") != 0) {
-						DrawImageCanvas("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + CA.Asset.Name + G + "_" + CA.Color + ".png", C.Canvas.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop);
-						if (!CA.Asset.Group.DrawingBlink) DrawImageCanvas("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + CA.Asset.Name + G + "_" + CA.Color + ".png", C.CanvasBlink.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop);
-					}
-					else {
-						DrawImageCanvasColorize("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + CA.Asset.Name + G + ".png", C.Canvas.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop, 1, CA.Color, CA.Asset.Group.DrawingFullAlpha);
-						if (!CA.Asset.Group.DrawingBlink) DrawImageCanvasColorize("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + CA.Asset.Name + G + ".png", C.CanvasBlink.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop, 1, CA.Color, CA.Asset.Group.DrawingFullAlpha);
-					}			
-				}			
 			}
 
+			// If we must draw the lock (never colorized)
+			if ((CA.Property != null) && (CA.Property.LockedBy != null) && (CA.Property.LockedBy != "")) {
+				DrawImageCanvas("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + Expression + CA.Asset.Name + Variation + "_Lock.png", C.Canvas.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop);
+				if (!CA.Asset.Group.DrawingBlink) DrawImageCanvas("Assets/" + CA.Asset.Group.Family + "/" + CA.Asset.Group.Name + "/" + Pose + Expression + CA.Asset.Name + Variation + "_Lock.png", C.CanvasBlink.getContext("2d"), CA.Asset.Group.DrawingLeft, CA.Asset.Group.DrawingTop);
+			}
 		}
-
 }
 
 // Returns a value from the character current appearance
@@ -309,41 +325,69 @@ function CharacterAppearanceGetCurrentValue(C, Group, Type) {
 
 // Loads the character appearance screen and keeps a backup of the previous appearance
 function AppearanceLoad() {
+	if (!CharacterAppearanceSelection) CharacterAppearanceSelection = Player;
+	var C = CharacterAppearanceSelection;
+	
 	CharacterAppearanceBuildAssets(Player);
-	CharacterAppearanceBackup = JSON.parse(JSON.stringify(Player.Appearance));
+	CharacterAppearanceBackup = JSON.parse(JSON.stringify(C.Appearance));
 }
 
 // Run the characther appearance selection screen 
 function AppearanceRun() {
+	var C = CharacterAppearanceSelection;
 	
 	// Draw the background and the character twice
-	if (CharacterAppearanceHeaderText == "") CharacterAppearanceHeaderText = TextGet("SelectAppearance");
-	DrawCharacter(Player, -550, (Player.IsKneeling()) ? -1100 : -100, 4);
-	DrawCharacter(Player, 800, 0, 1);
+	if (CharacterAppearanceHeaderText == "") {
+		if (C.ID == 0) CharacterAppearanceHeaderText = TextGet("SelectYourAppearance");
+		else CharacterAppearanceHeaderText = TextGet("SelectSomeoneAppearance").replace("TargetCharacterName", C.Name);
+	}
+	DrawCharacter(C, -550, (C.IsKneeling()) ? -1100 : -100, 4);
+	DrawCharacter(C, 800, 0, 1);
 	DrawText(CharacterAppearanceHeaderText, 450, 40, "White", "Black");
 
 	// Out of the color picker
-	if (CharacterAppearanceColorPicker == "") {
+	if (!CharacterAppearanceWardrobeMode && CharacterAppearanceColorPicker == "") {
 	
 		// Draw the top buttons with images
-		DrawButton(1300, 25, 90, 90, "", "White", "Icons/Reset.png");
-		DrawButton(1417, 25, 90, 90, "", "White", "Icons/Random.png");
+		if (C.ID == 0) {
+			DrawButton(1300, 25, 90, 90, "", "White", "Icons/" + ((LogQuery("Wardrobe", "PrivateRoom")) ? "Wardrobe" : "Reset") + ".png");
+			DrawButton(1417, 25, 90, 90, "", "White", "Icons/Random.png");
+		} else if (LogQuery("Wardrobe", "PrivateRoom")) DrawButton(1417, 25, 90, 90, "", "White", "Icons/Wardrobe.png");
 		DrawButton(1534, 25, 90, 90, "", "White", "Icons/Naked.png");
 		DrawButton(1651, 25, 90, 90, "", "White", "Icons/Next.png");
 		
 		// Creates buttons for all groups	
 		for (var A = CharacterAppearanceOffset; A < AssetGroup.length && A < CharacterAppearanceOffset + CharacterAppearanceNumPerPage; A++)
-			if ((AssetGroup[A].Family == Player.AssetFamily) && (AssetGroup[A].Category == "Appearance")) {
-				DrawButton(1300, 145 + (A - CharacterAppearanceOffset) * 95, 400, 65, "", "White", "");
-				DrawTextFit(AssetGroup[A].Description + ": " + CharacterAppearanceGetCurrentValue(Player, AssetGroup[A].Name, "Description"), 1500, 178 + (A - CharacterAppearanceOffset) * 95, 396, "Black");
-				var Color = CharacterAppearanceGetCurrentValue(Player, AssetGroup[A].Name, "Color", "");
+			if ((AssetGroup[A].Family == C.AssetFamily) && (AssetGroup[A].Category == "Appearance") && AssetGroup[A].AllowCustomize && (C.ID == 0 || AssetGroup[A].Clothing)) {
+				
+				// CharacterAppearanceNextItem(C, AssetGroup[A].Name, (MouseX > 1500 || CommonIsMobile));
+				DrawBackNextButton(1300, 145 + (A - CharacterAppearanceOffset) * 95, 400, 65, AssetGroup[A].Description + ": " + CharacterAppearanceGetCurrentValue(C, AssetGroup[A].Name, "Description"), "White", "", 
+					() => CharacterAppearanceNextItem(C, AssetGroup[A].Name, false, true), 
+					() => CharacterAppearanceNextItem(C, AssetGroup[A].Name, true, true));
+				var Color = CharacterAppearanceGetCurrentValue(C, AssetGroup[A].Name, "Color", "");
 				DrawButton(1725, 145 + (A - CharacterAppearanceOffset) * 95, 160, 65, Color, ((Color.indexOf("#") == 0) ? Color : "White"));
 				DrawButton(1910, 145 + (A - CharacterAppearanceOffset) * 95, 65, 65, "", "White", AssetGroup[A].AllowColorize ? "Icons/Color.png" : "Icons/ColorBlocked.png");
 			}
 
+	} else if (CharacterAppearanceWardrobeMode) {
+		
+		// Draw the wardrobe top controls & buttons
+		DrawButton(1417, 25, 90, 90, "", "White", "Icons/Dress.png");
+		DrawButton(1534, 25, 90, 90, "", "White", "Icons/Naked.png");
+		DrawButton(1651, 25, 90, 90, "", "White", "Icons/Next.png");
+		DrawText(CharacterAppearanceWardrobeText, 1645, 220, "White", "Gray");
+		ElementPosition("InputWardrobeName", 1645, 315, 690);
+
+		// Draw 6 wardrobe options
+		for (var W = CharacterAppearanceWardrobeOffset; W < Player.Wardrobe.length && W < CharacterAppearanceWardrobeOffset + 6; W++) {
+			DrawButton(1300, 430 + (W - CharacterAppearanceWardrobeOffset) * 95, 500, 65, "", "White", "");
+			DrawTextFit((W + 1).toString() + (W < 9 ? ":  " : ": ") + Player.WardrobeCharacterNames[W], 1550, 463 + (W - CharacterAppearanceWardrobeOffset) * 95, 496, "Black");
+			DrawButton(1820, 430 + (W - CharacterAppearanceWardrobeOffset) * 95, 160, 65, "Save", "White", "");
+		}
+
 	} else {
 
-		// Draws the color picker
+		// Draw the color picker
 		ElementPosition("InputColor", 1450, 65, 300);
 		DrawButton(1610, 37, 65, 65, "", "White", "Icons/Color.png");
 		DrawImage("Backgrounds/ColorPicker.png", 1300, 145);
@@ -357,7 +401,7 @@ function AppearanceRun() {
 }
 
 // Sets an item in the character appearance
-function CharacterAppearanceSetItem(C, Group, ItemAsset, NewColor, DifficultyFactor) {
+function CharacterAppearanceSetItem(C, Group, ItemAsset, NewColor, DifficultyFactor, Refresh) {
 	
 	// Sets the difficulty factor
 	if (DifficultyFactor == null) DifficultyFactor = 0;
@@ -381,43 +425,47 @@ function CharacterAppearanceSetItem(C, Group, ItemAsset, NewColor, DifficultyFac
 	}
 
 	// Draw the character canvas and calculate the effects on the character
-	CharacterRefresh(C);
+	if (Refresh == null || Refresh) CharacterRefresh(C);
 
 }
 
 // Cycle in the appearance assets to find the next item in a group and wear it
-function CharacterAppearanceNextItem(C, Group) {
-	
-	// For each item, we first find the item and pick the next one
+function CharacterAppearanceNextItem(C, Group, Forward, Description) {	
 	var Current = CharacterAppearanceGetCurrentValue(C, Group, "Name");
-	var Found = (Current == "None");
-	for (var I = 0; I < CharacterAppearanceAssets.length; I++)
-		if (CharacterAppearanceAssets[I].Group.Name == Group) {
-			if (Found) {
-				CharacterAppearanceSetItem(C, Group, CharacterAppearanceAssets[I]);
-				return;				
-			}
-			else {
-				if (CharacterAppearanceAssets[I].Name == Current)
-					Found = true;
+	var CAA = CharacterAppearanceAssets.filter(a => a.Group.Name == Group);
+	if (Description == true && CAA.length == 0) return "None";
+	if (Current != "None") {
+		// If we found the item we move forward or backward if possible
+		var I = CAA.findIndex(a => a.Name == Current);
+		if (I >= 0) {
+			if (Forward == null || Forward) {
+				if (I + 1 < CAA.length) {
+					if (Description == true) return CAA[I + 1].Description;
+					CharacterAppearanceSetItem(C, Group, CAA[I + 1]);
+					return;
+				}
+			} else {
+				if (I - 1 >= 0) {
+					if (Description == true) return CAA[I - 1].Description;
+					CharacterAppearanceSetItem(C, Group, CAA[I - 1]);
+					return;
+				}
 			}
 		}
-				
-	// Since we didn't found any item, we pick "None" or the first item if we can't
-	for (var A = 0; A < AssetGroup.length; A++)
-		if (AssetGroup[A].Name == Group) {
-			if (AssetGroup[A].AllowNone) {
-				CharacterAppearanceSetItem(C, Group, null);
-				return;				
-			}
-			else
-				for (I = 0; I < CharacterAppearanceAssets.length; I++)
-					if (CharacterAppearanceAssets[I].Group.Name == Group) {
-						CharacterAppearanceSetItem(C, Group, CharacterAppearanceAssets[I]);
-						return;						
-					}			
-		}
-
+	}
+	// Since we didn't found any item, we pick "None" if we had an item or the first or last item
+	var AG = AssetGroup.find(g => g.Name == Group);
+	if (Current != "None" && AG != null && AG.AllowNone) {
+		if (Description == true) return "None";
+		CharacterAppearanceSetItem(C, Group, null);
+	} else if (Forward == null || Forward) {
+		if (Description == true) return CAA[0].Description;
+		CharacterAppearanceSetItem(C, Group, CAA[0]);
+	} else {
+		if (Description == true) return CAA[CAA.length - 1].Description;
+		CharacterAppearanceSetItem(C, Group, CAA[CAA.length - 1]);
+	}	
+	if (Description == true) return "None";
 }
 
 // Find the next color for the item
@@ -450,7 +498,7 @@ function CharacterAppearanceNextColor(C, Group) {
 function CharacterAppearanceMoveOffset(Move) {
 	CharacterAppearanceOffset = CharacterAppearanceOffset + Move;
 	if (CharacterAppearanceOffset > AssetGroup.length) CharacterAppearanceOffset = 0;
-	if (AssetGroup[CharacterAppearanceOffset].Category != "Appearance") CharacterAppearanceOffset = 0;
+	if ((AssetGroup[CharacterAppearanceOffset].Category != "Appearance") || !AssetGroup[CharacterAppearanceOffset].AllowCustomize) CharacterAppearanceOffset = 0;
 	if (CharacterAppearanceOffset < 0) CharacterAppearanceOffset = Math.floor(AssetGroup.length / CharacterAppearanceNumPerPage) * CharacterAppearanceNumPerPage;
 }
 
@@ -464,63 +512,95 @@ function CharacterAppearanceSetColorForGroup(C, Color, Group) {
 
 // When the user clicks on the character appearance selection screen
 function AppearanceClick() {
+	var C = CharacterAppearanceSelection;
 
 	// In regular mode
-	if (CharacterAppearanceColorPicker == "") {
+	if (!CharacterAppearanceWardrobeMode && CharacterAppearanceColorPicker == "") {
 
 		// If we must switch to the next item in the assets
 		if ((MouseX >= 1300) && (MouseX < 1700) && (MouseY >= 145) && (MouseY < 975))
 			for (var A = CharacterAppearanceOffset; A < AssetGroup.length && A < CharacterAppearanceOffset + CharacterAppearanceNumPerPage; A++)
-				if ((AssetGroup[A].Family == Player.AssetFamily) && (AssetGroup[A].Category == "Appearance"))
+				if ((AssetGroup[A].Family == C.AssetFamily) && (AssetGroup[A].Category == "Appearance") && (C.ID == 0 || AssetGroup[A].Clothing))
 					if ((MouseY >= 145 + (A - CharacterAppearanceOffset) * 95) && (MouseY <= 210 + (A - CharacterAppearanceOffset) * 95))
-						CharacterAppearanceNextItem(Player, AssetGroup[A].Name);
+						CharacterAppearanceNextItem(C, AssetGroup[A].Name, (MouseX > 1500 || CommonIsMobile));
 
 		// If we must switch to the next item in the assets
 		if ((MouseX >= 1725) && (MouseX < 1885) && (MouseY >= 145) && (MouseY < 975))
 			for (var A = CharacterAppearanceOffset; A < AssetGroup.length && A < CharacterAppearanceOffset + CharacterAppearanceNumPerPage; A++)
-				if ((AssetGroup[A].Family == Player.AssetFamily) && (AssetGroup[A].Category == "Appearance"))
+				if ((AssetGroup[A].Family == C.AssetFamily) && (AssetGroup[A].Category == "Appearance") && (C.ID == 0 || AssetGroup[A].Clothing))
 					if ((MouseY >= 145 + (A - CharacterAppearanceOffset) * 95) && (MouseY <= 210 + (A - CharacterAppearanceOffset) * 95))
-						CharacterAppearanceNextColor(Player, AssetGroup[A].Name);
+						CharacterAppearanceNextColor(C, AssetGroup[A].Name);
 
 		// If we must switch to the next item in the assets
 		if ((MouseX >= 1910) && (MouseX < 1975) && (MouseY >= 145) && (MouseY < 975))
 			for (var A = CharacterAppearanceOffset; A < AssetGroup.length && A < CharacterAppearanceOffset + CharacterAppearanceNumPerPage; A++)
-				if ((AssetGroup[A].Family == Player.AssetFamily) && (AssetGroup[A].Category == "Appearance") && AssetGroup[A].AllowColorize)
+				if ((AssetGroup[A].Family == C.AssetFamily) && (AssetGroup[A].Category == "Appearance") && (C.ID == 0 || AssetGroup[A].Clothing) && AssetGroup[A].AllowColorize)
 					if ((MouseY >= 145 + (A - CharacterAppearanceOffset) * 95) && (MouseY <= 210 + (A - CharacterAppearanceOffset) * 95))						
 					{
 						
 						// Keeps the previous color in backup and creates a text box to enter the color
 						CharacterAppearanceColorPicker = AssetGroup[A].Name;
-						CharacterAppearanceColorPickerBackup = CharacterAppearanceGetCurrentValue(Player, CharacterAppearanceColorPicker, "Color");
+						CharacterAppearanceColorPickerBackup = CharacterAppearanceGetCurrentValue(C, CharacterAppearanceColorPicker, "Color");
 						ElementCreateInput("InputColor", "text", ((CharacterAppearanceColorPickerBackup == "Default") || (CharacterAppearanceColorPickerBackup == "None")) ? "#" : CharacterAppearanceColorPickerBackup, "7");
 						
 					}
 
 		// If we must set back the default outfit or set a random outfit
-		if ((MouseX >= 1300) && (MouseX < 1390) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceSetDefault(Player);
-		if ((MouseX >= 1417) && (MouseX < 1507) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceFullRandom(Player);
-		if ((MouseX >= 1534) && (MouseX < 1624) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceNaked(Player);
+		if ((MouseX >= 1300) && (MouseX < 1390) && (MouseY >= 25) && (MouseY < 115) && (C.ID == 0) && !LogQuery("Wardrobe", "PrivateRoom")) CharacterAppearanceSetDefault(C);
+		if ((MouseX >= 1300) && (MouseX < 1390) && (MouseY >= 25) && (MouseY < 115) && (C.ID == 0) && LogQuery("Wardrobe", "PrivateRoom")) CharacterAppearanceWardrobeLoad(C);
+		if ((MouseX >= 1417) && (MouseX < 1507) && (MouseY >= 25) && (MouseY < 115) && (C.ID == 0)) CharacterAppearanceFullRandom(C);
+		if ((MouseX >= 1417) && (MouseX < 1507) && (MouseY >= 25) && (MouseY < 115) && (C.ID != 0) && LogQuery("Wardrobe", "PrivateRoom")) CharacterAppearanceWardrobeLoad(C);
+		if ((MouseX >= 1534) && (MouseX < 1624) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceNaked(C);
 		if ((MouseX >= 1651) && (MouseX < 1741) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceMoveOffset(CharacterAppearanceNumPerPage);
-		if ((MouseX >= 1768) && (MouseX < 1858) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceExit(Player);
-		if ((MouseX >= 1885) && (MouseX < 1975) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceReady(Player);
+		if ((MouseX >= 1768) && (MouseX < 1858) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceExit(C);
+		if ((MouseX >= 1885) && (MouseX < 1975) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceReady(C);
+		
+	} else if (CharacterAppearanceWardrobeMode) {
+		if ((MouseX >= 1651) && (MouseX < 1741) && (MouseY >= 25) && (MouseY < 115)) {
+			CharacterAppearanceWardrobeOffset += 6;
+			if (CharacterAppearanceWardrobeOffset >= Player.Wardrobe.length) CharacterAppearanceWardrobeOffset = 0;
+		}
+		if ((MouseX >= 1300) && (MouseX < 1800) && (MouseY >= 430) && (MouseY < 970))
+			for (var W = CharacterAppearanceWardrobeOffset; W < Player.Wardrobe.length && W < CharacterAppearanceWardrobeOffset + 6; W++)
+				if ((MouseY >= 430 + (W - CharacterAppearanceWardrobeOffset) * 95) && (MouseY <= 495 + (W - CharacterAppearanceWardrobeOffset) * 95)) {
+					WardrobeFastLoad(C, W, false);
+				}
 
+		if ((MouseX >= 1820) && (MouseX < 1975) && (MouseY >= 430) && (MouseY < 970))
+			for (var W = CharacterAppearanceWardrobeOffset; W < Player.Wardrobe.length && W < CharacterAppearanceWardrobeOffset + 6; W++)
+				if ((MouseY >= 430 + (W - CharacterAppearanceWardrobeOffset) * 95) && (MouseY <= 495 + (W - CharacterAppearanceWardrobeOffset) * 95)) {
+					WardrobeFastSave(C, W);
+					var LS = /^[a-zA-Z ]+$/;
+					var Name = ElementValue("InputWardrobeName").trim();
+					if (Name.match(LS) || Name.length == 0) {
+						WardrobeSetCharacterName(W, Name);
+						CharacterAppearanceWardrobeText = TextGet("WardrobeNameInfo");
+					} else {
+						CharacterAppearanceWardrobeText = TextGet("WardrobeNameError");
+					}
+				}
+
+		if ((MouseX >= 1417) && (MouseX < 1507) && (MouseY >= 25) && (MouseY < 115)) { CharacterAppearanceWardrobeMode = false; ElementRemove("InputWardrobeName"); }
+		if ((MouseX >= 1534) && (MouseX < 1624) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceNaked(C);
+		if ((MouseX >= 1768) && (MouseX < 1858) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceExit(C);
+		if ((MouseX >= 1885) && (MouseX < 1975) && (MouseY >= 25) && (MouseY < 115)) CharacterAppearanceReady(C);
 	} else {
 		
 		// Can set a color manually from the text field
 		if ((MouseX >= 1610) && (MouseX < 1675) && (MouseY >= 37) && (MouseY < 102))
-			if (/^#[0-9A-F]{6}$/i.test(ElementValue("InputColor")))
-				CharacterAppearanceSetColorForGroup(Player, ElementValue("InputColor").toLowerCase(), CharacterAppearanceColorPicker);
+			if (CommonIsColor(ElementValue("InputColor")))
+				CharacterAppearanceSetColorForGroup(C, ElementValue("InputColor").toLowerCase(), CharacterAppearanceColorPicker);
 
 		// In color picker mode, we can pick a color from the color image
 		if ((MouseX >= 1300) && (MouseX < 1975) && (MouseY >= 145) && (MouseY < 975)) {
 			var Color = DrawRGBToHex(MainCanvas.getImageData(MouseX, MouseY, 1, 1).data);
-			CharacterAppearanceSetColorForGroup(Player, Color, CharacterAppearanceColorPicker);
+			CharacterAppearanceSetColorForGroup(C, Color, CharacterAppearanceColorPicker);
 			ElementValue("InputColor", Color);
 		}
 		
 		// Accepts the new color
 		if ((MouseX >= 1768) && (MouseX < 1858) && (MouseY >= 25) && (MouseY < 115)) {
-			CharacterAppearanceSetColorForGroup(Player, CharacterAppearanceColorPickerBackup, CharacterAppearanceColorPicker);
+			CharacterAppearanceSetColorForGroup(C, CharacterAppearanceColorPickerBackup, CharacterAppearanceColorPicker);
 			CharacterAppearanceColorPicker = "";
 		}
 
@@ -534,6 +614,8 @@ function AppearanceClick() {
 
 // When we cancel the character appearance edit, we restore the backup
 function CharacterAppearanceExit(C) {
+	ElementRemove("InputWardrobeName");
+	CharacterAppearanceWardrobeMode = false;
 	C.Appearance = CharacterAppearanceBackup;
 	CharacterLoadCanvas(C);
 	if (C.AccountName != "") CommonSetScreen(CharacterAppearanceReturnModule, CharacterAppearanceReturnRoom);
@@ -545,8 +627,8 @@ function CharacterAppearanceExit(C) {
 // When the player is ready, we make sure she at least has an outfit
 function CharacterAppearanceReady(C) {
 	
-	// Make sure the character has one item of each default type
-	if (CharacterAppearanceReturnRoom == "MainHall")
+	// Make sure the character has one item of each default type (not used for now)
+	if (CharacterAppearanceReturnRoom == "DO NOT USE")
 		for (var A = 0; A < AssetGroup.length; A++)
 			if ((AssetGroup[A].IsDefault) || CharacterAppearanceRequired(C, AssetGroup[A].Name)) {
 
@@ -564,10 +646,14 @@ function CharacterAppearanceReady(C) {
 
 			}
 
+	// Exits wardrobe mode
+	ElementRemove("InputWardrobeName");
+	CharacterAppearanceWardrobeMode = false;
+
 	// If there's no error, we continue to the login or main hall if already logged
-	if ((C.ID == 0) && (C.AccountName != "")) {
+	if (C.AccountName != "") {
 		ServerPlayerAppearanceSync();
-		if (CharacterAppearanceReturnRoom == "ChatRoom") ChatRoomCharacterUpdate(Player);
+		if (CharacterAppearanceReturnRoom == "ChatRoom") ChatRoomCharacterUpdate(C);
 		CommonSetScreen(CharacterAppearanceReturnModule, CharacterAppearanceReturnRoom);
 		CharacterAppearanceReturnRoom = "MainHall";
 		CharacterAppearanceReturnModule = "Room";
@@ -595,4 +681,24 @@ function CharacterAppearanceCopy(FromC, ToC) {
 	CharacterRefresh(ToC);
 	if (ToC.ID == 0) ServerPlayerAppearanceSync();
 
+}
+
+// Loads the appearance editing screen for a character
+function CharacterAppearanceLoadCharacter(C) {
+	CharacterAppearanceSelection = C;
+	CharacterAppearanceReturnRoom = CurrentScreen;
+	CharacterAppearanceReturnModule = CurrentModule;
+	CommonSetScreen("Character", "Appearance");
+}
+
+// Load wardrobe menu in appearance selection
+function CharacterAppearanceWardrobeLoad(C) {
+	if (Player.Wardrobe == null || Player.Wardrobe.length < 12) {
+		WardrobeLoadCharacters(true); 
+	} else {
+		WardrobeLoadCharacterNames();
+	}
+	ElementCreateInput("InputWardrobeName", "text", C.Name, "20");
+	CharacterAppearanceWardrobeMode = true;
+	CharacterAppearanceWardrobeText = TextGet("WardrobeNameInfo");
 }

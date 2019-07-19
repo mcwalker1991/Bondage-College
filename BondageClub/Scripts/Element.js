@@ -9,6 +9,15 @@ function ElementValue(ID, Value) {
 			document.getElementById(ID).value = Value;
 }
 
+// Returns the current HTML content of an element
+function ElementContent(ID, Content) {
+	if (document.getElementById(ID) != null)
+		if (Content == null)
+			return document.getElementById(ID).innerHTML;
+		else 
+			document.getElementById(ID).innerHTML = Content;
+}
+
 // Creates a new text area element in the main document
 function ElementCreateTextArea(ID) {
 	if (document.getElementById(ID) == null) {
@@ -33,6 +42,17 @@ function ElementCreateInput(ID, Type, Value, MaxLength) {
 		Input.setAttribute("onfocus", "this.removeAttribute('readonly');");
 		Input.addEventListener("keydown", KeyDown);
 		document.body.appendChild(Input);
+	}
+}
+
+// Creates a new div element in the main document
+function ElementCreateDiv(ID) {
+	if (document.getElementById(ID) == null) {
+		var Div = document.createElement("div");
+		Div.setAttribute("ID", ID);
+		Div.setAttribute("name", ID);
+		Div.addEventListener("keydown", KeyDown);
+		document.body.appendChild(Div);
 	}
 }
 
@@ -81,15 +101,15 @@ function ElementPositionFix(ElementID, Font, X, Y, W, H) {
 	if (DrawScreenWidth <= DrawScreenHeight * 2) {
 		Font = Font * DrawScreenWidth / 2000;
 		Left = X * DrawScreenWidth / 2000;
-		Width = W * DrawScreenWidth / 2000 - 13;
+		Width = W * DrawScreenWidth / 2000;
 		Top = (Y * DrawScreenWidth / 2000) + ((DrawScreenHeight * 2 - DrawScreenWidth) / 4);
-		Height = H * DrawScreenWidth / 2000 - 8;
+		Height = H * DrawScreenWidth / 2000;
 	} else {
 		Font = Font * DrawScreenHeight / 1000;
 		Left = (X * DrawScreenHeight / 1000) + (DrawScreenWidth - DrawScreenHeight * 2) / 2;
-		Width = W * DrawScreenHeight / 1000 - 13;
+		Width = W * DrawScreenHeight / 1000;
 		Top = Y * DrawScreenHeight / 1000;
-		Height = H * DrawScreenHeight / 1000 - 8;
+		Height = H * DrawScreenHeight / 1000;
 	}
 
 	// Sets the element style
@@ -102,12 +122,22 @@ function ElementScrollToEnd(ID) {
 	if (document.getElementById(ID) != null) {
 		var element = document.getElementById(ID);
 		element.focus();
-		element.selectionStart = element.selectionEnd = element.value.length;
+		if (element.value != null)
+			element.selectionStart = element.selectionEnd = element.value.length;
+		else
+			element.scrollTop = element.scrollHeight;
 	}
 }
 
-// Sets focus to the specified element
+// Returns TRUE if the specified element is currently scrolled to the very bottom
+function ElementIsScrolledToEnd(ID) {
+	var element = document.getElementById(ID);
+	if (element != null && element.scrollHeight - element.scrollTop - element.clientHeight < 1) return true;
+	else return false;
+}
+
+// Sets focus to the specified element for regular users, not mobile
 function ElementFocus(ID) {
-	if (document.getElementById(ID) != null)
+	if ((document.getElementById(ID) != null) && !CommonIsMobile)
 		document.getElementById(ID).focus();
 }

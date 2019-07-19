@@ -7,10 +7,8 @@ var KeyPress = "";
 var CurrentModule;
 var CurrentScreen;
 var CurrentCharacter = null;
-var CurrentTime = 0;
 var CurrentOnlinePlayers = 0;
 var CommonIsMobile = false;
-var CommonRunInterval = 20;
 var CommonCSVCache = {};
 var CutsceneStage = 0;
 
@@ -205,6 +203,11 @@ function CommonSetScreen(NewModule, NewScreen) {
 // Return the current time
 function CommonTime() {
 	return new Date().getTime();
+}
+
+// Returns TRUE if the string is a HEX color
+function CommonIsColor(Value) {
+	return ((Value != null) && /^#[0-9A-F]{6}$/i.test(Value));
 }
 
 // Returns a random item from a list but make sure we don't pick the previous item again

@@ -1,5 +1,5 @@
 "use strict";
-var ChatSearchBackground = "IntroductionDark"
+var ChatSearchBackground = "IntroductionDark";
 var ChatSearchResult = [];
 var ChatSearchMessage = "";
 
@@ -56,6 +56,11 @@ function ChatSearchClick() {
 	if ((MouseX >= 1885) && (MouseX < 1975) && (MouseY >= 885) && (MouseY < 975)) { ElementRemove("InputSearch"); CommonSetScreen("Room", "MainHall"); }
 }
 
+// When the user press "enter" in the search box, we launch a search query
+function ChatSearchKeyDown() {
+    if (KeyPress == 13) ChatSearchQuery();
+}
+
 // When the player wants to join a chat room
 function ChatSearchJoin() {
 
@@ -65,8 +70,10 @@ function ChatSearchJoin() {
 	for (var C = 0; C < ChatSearchResult.length && C < 24; C++) {
 
 		// If the player clicked on a valid room
-		if ((MouseX >= X) && (MouseX <= X + 630) && (MouseY >= Y) && (MouseY <= Y + 85))
+		if ((MouseX >= X) && (MouseX <= X + 630) && (MouseY >= Y) && (MouseY <= Y + 85)) {
+			ChatRoomPlayerCanJoin = true;
 			ServerSend("ChatRoomJoin", { Name: ChatSearchResult[C].Name } );
+		}
 
 		// Moves the next window position
 		X = X + 660;

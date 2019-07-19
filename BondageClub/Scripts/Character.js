@@ -30,8 +30,8 @@ function CharacterReset(CharacterID, CharacterAssetFamily) {
 		AllowItem: true,
 		HeightModifier: 0,
 		CanTalk : function() { return ((this.Effect.indexOf("GagLight") < 0) && (this.Effect.indexOf("GagNormal") < 0) && (this.Effect.indexOf("GagHeavy") < 0) && (this.Effect.indexOf("GagTotal") < 0)) },
-		CanWalk : function() { return ((this.Effect.indexOf("Freeze") < 0) && ((this.Pose == null) || (this.Pose.indexOf("Kneel") < 0))) },
-		CanKneel : function() { return ((this.Effect.indexOf("Freeze") < 0) && ((this.Pose == null) || (this.Pose.indexOf("LegsClosed") < 0))) },
+		CanWalk : function() { return ((this.Effect.indexOf("Freeze") < 0) && ((this.Pose == null) || (this.Pose.indexOf("Kneel") < 0) || (this.Effect.indexOf("KneelFreeze") < 0))) },
+		CanKneel : function() { return ((this.Effect.indexOf("Freeze") < 0) && (this.Effect.indexOf("ForceKneel") < 0) && ((this.Pose == null) || (this.Pose.indexOf("LegsClosed") < 0))) },
 		CanInteract : function() { return (this.Effect.indexOf("Block") < 0) },
 		CanChange : function() { return ((this.Effect.indexOf("Freeze") < 0) && (this.Effect.indexOf("Block") < 0) && (this.Effect.indexOf("Prone") < 0) && !LogQuery("BlockChange", "Rule")) },
 		IsProne : function() { return (this.Effect.indexOf("Prone") >= 0) },
@@ -43,7 +43,7 @@ function CharacterReset(CharacterID, CharacterAssetFamily) {
 		IsBreastChaste : function() { return (this.Effect.indexOf("BreastChaste") >= 0) },
 		IsEgged : function() { return (this.Effect.indexOf("Egged") >= 0) },
 		IsOwned : function() { return ((this.Owner != null) && (this.Owner.trim() != "")) },
-		IsOwnedByPlayer : function() { return (((this.Owner != null) && (this.Owner.trim() == Player.Name)) || (NPCEventGet(this, "EndDomTrial") > 0)) },
+		IsOwnedByPlayer : function() { return (((((this.Owner != null) && (this.Owner.trim() == Player.Name)) || (NPCEventGet(this, "EndDomTrial") > 0)) && (this.Ownership == null)) || ((this.Ownership != null) && (this.Ownership.MemberNumber != null) && (this.Ownership.MemberNumber == Player.MemberNumber))) },
 		IsOwner : function() { return ((NPCEventGet(this, "EndSubTrial") > 0) || (this.Name == Player.Owner.replace("NPC-", ""))) },
 		IsKneeling: function () { return ((this.Pose != null) && (this.Pose.indexOf("Kneel") >= 0)) },
 		IsNaked : function () { return CharacterIsNaked(this); },
@@ -121,7 +121,7 @@ function CharacterBuildDialog(C, CSV) {
 function CharacterLoadCSVDialog(C, Override) {
 
     // Finds the full path of the CSV file to use cache
-    var FullPath = ((C.ID == 0) ? "Screens/Character/Player/Dialog_Player" : "Screens/" + CurrentModule + "/" + CurrentScreen + "/Dialog_" + ((Override == null) ? C.AccountName : Override)) + ".csv";    
+    var FullPath = ((C.ID == 0) ? "Screens/Character/Player/Dialog_Player" : ((Override == null) ? "Screens/" + CurrentModule + "/" + CurrentScreen + "/Dialog_" + C.AccountName : Override)) + ".csv";
     if (CommonCSVCache[FullPath]) {
 		CharacterBuildDialog(C, CommonCSVCache[FullPath]);
         return;
@@ -148,6 +148,8 @@ function CharacterArchetypeClothes(C, Archetype, ForceColor) {
 		InventoryAdd(C, "MaidHairband1", "Hat", false);
 		CharacterAppearanceSetItem(C, "Hat", C.Inventory[C.Inventory.length - 1].Asset);
 		CharacterAppearanceSetColorForGroup(C, "Default", "Hat");
+		InventoryAdd(C, "MaidOutfit2", "Cloth", false);
+		InventoryRemove(C, "HairAccessory");
 		C.AllowItem = (LogQuery("LeadSorority", "Maid"));
 	}
 
@@ -166,6 +168,7 @@ function CharacterArchetypeClothes(C, Archetype, ForceColor) {
 		InventoryWear(C, "MistressBottom", "ClothLower", Color);
 		InventoryAdd(C, "MetalChastityBeltKey", "ItemPelvis", false);
 		InventoryAdd(C, "MetalChastityBraKey", "ItemBreast", false);
+		InventoryRemove(C, "HairAccessory");
 	}
 
 }
@@ -193,22 +196,26 @@ function CharacterLoadNPC(NPCType) {
 
 	// Returns the new character
 	return C;
-	
+
 }
 
 // Sets up the online character
-function CharacterOnlineRefresh(Char, data) {
+function CharacterOnlineRefresh(Char, data, SourceMemberNumber) {
 	Char.ActivePose = data.ActivePose;
+	Char.LabelColor = data.LabelColor;
+	Char.Creation = data.Creation;
+	Char.ItemPermission = data.ItemPermission;
+	Char.Ownership = data.Ownership;	
 	Char.Reputation = (data.Reputation != null) ? data.Reputation : [];
-	Char.Appearance = ServerAppearanceLoadFromBundle("Female3DCG", data.Appearance);
+	Char.Appearance = ServerAppearanceLoadFromBundle(Char, "Female3DCG", data.Appearance, SourceMemberNumber);
+	if (Char.ID != 0) InventoryLoad(Char, data.Inventory);
 	AssetReload(Char);
 	CharacterLoadEffect(Char);
-	Char.AllowItem = ((Char.ID == 0) || Char.IsRestrained() || !Char.CanTalk() || (ReputationGet("Dominant") + 25 >= ReputationCharacterGet(Char, "Dominant")));
 	CharacterRefresh(Char);
 }
 
 // Loads an online character
-function CharacterLoadOnline(data) {
+function CharacterLoadOnline(data, SourceMemberNumber) {
 
 	// Checks if the NPC already exists and returns it if it's the case
 	var Char = null;	
@@ -229,33 +236,50 @@ function CharacterLoadOnline(data) {
 		Char.Lover = (data.Lover != null) ? data.Lover : "";
 		Char.Owner = (data.Owner != null) ? data.Owner : "";
 		Char.AccountName = "Online-" + data.ID.toString();
-		CharacterLoadCSVDialog(Char, "Online");
-		CharacterOnlineRefresh(Char, data);
+		Char.MemberNumber = data.MemberNumber;
+		var BackupCurrentScreen = CurrentScreen;
+		CurrentScreen = "ChatRoom";
+		CharacterLoadCSVDialog(Char, "Screens/Online/ChatRoom/Dialog_Online");
+		CharacterOnlineRefresh(Char, data, SourceMemberNumber);
+		CurrentScreen = BackupCurrentScreen;
 
 	} else {
 		
-		// Flags "refresh" if we need to redraw the character 
-		var Refresh = false;
-		if ((Char.ActivePose != data.ActivePose) || (ChatRoomData == null) || (ChatRoomData.Character == null))
-			Refresh = true;
-		else
+		// If we must add a character, we refresh it
+		var Refresh = true;
+		if (ChatRoomData.Character != null)
 			for (var C = 0; C < ChatRoomData.Character.length; C++)
-				if (ChatRoomData.Character[C].ID == data.ID)
-					if (ChatRoomData.Character[C].Appearance.length != data.Appearance.length)
-						Refresh = true;
-					else 
-						for (var A = 0; A < data.Appearance.length; A++)
-							if ((data.Appearance[A].Name != ChatRoomData.Character[C].Appearance[A].Name) || (data.Appearance[A].Group != ChatRoomData.Character[C].Appearance[A].Group))
-								Refresh = true;
-							else
-								if ((data.Appearance[A].Property != null) && (ChatRoomData.Character[C].Appearance[A].Property != null) && (JSON.stringify(data.Appearance[A].Property) != JSON.stringify(ChatRoomData.Character[C].Appearance[A].Property)))
+				if (ChatRoomData.Character[C].ID.toString() == data.ID.toString()) {
+					Refresh = false;
+					break;
+				}
+			
+		// Flags "refresh" if we need to redraw the character
+		if (!Refresh)
+			if ((Char.ActivePose != data.ActivePose) || (Char.LabelColor != data.LabelColor) || (ChatRoomData == null) || (ChatRoomData.Character == null))
+				Refresh = true;
+			else
+				for (var C = 0; C < ChatRoomData.Character.length; C++)
+					if (ChatRoomData.Character[C].ID == data.ID)
+						if (ChatRoomData.Character[C].Appearance.length != data.Appearance.length)
+							Refresh = true;
+						else 
+							for (var A = 0; A < data.Appearance.length; A++)
+								if ((data.Appearance[A].Name != ChatRoomData.Character[C].Appearance[A].Name) || (data.Appearance[A].Group != ChatRoomData.Character[C].Appearance[A].Group))
 									Refresh = true;
-								else 
-									if (((data.Appearance[A].Property != null) && (ChatRoomData.Character[C].Appearance[A].Property == null)) || ((data.Appearance[A].Property == null) && (ChatRoomData.Character[C].Appearance[A].Property != null)))
+								else
+									if ((data.Appearance[A].Property != null) && (ChatRoomData.Character[C].Appearance[A].Property != null) && (JSON.stringify(data.Appearance[A].Property) != JSON.stringify(ChatRoomData.Character[C].Appearance[A].Property)))
 										Refresh = true;
+									else 
+										if (((data.Appearance[A].Property != null) && (ChatRoomData.Character[C].Appearance[A].Property == null)) || ((data.Appearance[A].Property == null) && (ChatRoomData.Character[C].Appearance[A].Property != null)))
+											Refresh = true;
+
+		// Flags "refresh" if the ownership or inventory has changed
+		if (!Refresh && (JSON.stringify(Char.Ownership) !== JSON.stringify(data.Ownership))) Refresh = true;
+		if (!Refresh && (data.Inventory != null) && (Char.Inventory.length != data.Inventory.length)) Refresh = true;
 
 		// If we must refresh
-		if (Refresh) CharacterOnlineRefresh(Char, data);
+		if (Refresh) CharacterOnlineRefresh(Char, data, SourceMemberNumber);
 
 	}
 
@@ -307,14 +331,12 @@ function CharacterAddEffect(C, NewEffect) {
 function CharacterLoadEffect(C) {
 	C.Effect = [];
 	for (var A = 0; A < C.Appearance.length; A++) {
-		if ((C.Appearance[A].Property != null) && (C.Appearance[A].Property.Effect != null))
-			CharacterAddEffect(C, C.Appearance[A].Property.Effect);
+		if ((C.Appearance[A].Property != null) && (C.Appearance[A].Property.Effect != null)) CharacterAddEffect(C, C.Appearance[A].Property.Effect);
+		if (C.Appearance[A].Asset.Effect != null)
+			CharacterAddEffect(C, C.Appearance[A].Asset.Effect);
 		else
-			if (C.Appearance[A].Asset.Effect != null)
-				CharacterAddEffect(C, C.Appearance[A].Asset.Effect);
-			else
-				if (C.Appearance[A].Asset.Group.Effect != null)
-					CharacterAddEffect(C, C.Appearance[A].Asset.Group.Effect);
+			if (C.Appearance[A].Asset.Group.Effect != null)
+				CharacterAddEffect(C, C.Appearance[A].Asset.Group.Effect);
 	}	
 }
 
@@ -373,14 +395,15 @@ function CharacterRefresh(C, Push) {
 	CharacterLoadEffect(C);
 	CharacterLoadPose(C);	
 	CharacterLoadCanvas(C);
-	if ((CurrentModule != "Character") && (C.ID == 0) && ((Push == null) || (Push == true))) ServerPlayerAppearanceSync();
+	if ((C.ID == 0) && (C.OnlineID != null) && ((Push == null) || (Push == true))) ServerPlayerAppearanceSync();
 }
 
-// Returns TRUE if a character has no item
+// Returns TRUE if a character has no item (the slave collar doesn't count)
 function CharacterHasNoItem(C) {
 	for(var A = 0; A < C.Appearance.length; A++)
 		if ((C.Appearance[A].Asset != null) && (C.Appearance[A].Asset.Group.Category == "Item"))
-			return false;
+			if (C.Appearance[A].Asset.Name != "SlaveCollar")
+				return false;
 	return true;
 }
 
@@ -509,4 +532,48 @@ function CharacterFullRandomRestrain(C, Ratio) {
 function CharacterSetActivePose(C, NewPose) {
 	C.ActivePose = NewPose;
 	CharacterRefresh(C, false);
+}
+
+// Sets a specific facial expression for the character's specified AssetGruo
+function CharacterSetFacialExpression(C, AssetGroup, Expression) {
+	for (var A = 0; A < C.Appearance.length; A++) {
+		if ((C.Appearance[A].Asset.Group.Name == AssetGroup) && (C.Appearance[A].Asset.Group.AllowExpression)) {
+			if ((Expression == null) || (C.Appearance[A].Asset.Group.AllowExpression.indexOf(Expression) >= 0)) {
+				if (!C.Appearance[A].Property) C.Appearance[A].Property = {};
+				if (C.Appearance[A].Property.Expression != Expression) {
+					C.Appearance[A].Property.Expression = Expression;
+					CharacterRefresh(C);
+					ChatRoomCharacterUpdate(C);
+				}
+				return;
+			}
+		}
+	}
+}
+
+// Switches to the next facial expression for the given character's AssetGroup
+function CharacterCycleFacialExpression(C, AssetGroup, Forward, Description) {
+	var A = C.Appearance.find(a => a.Asset.Group.Name == AssetGroup && a.Asset.Group.AllowExpression && a.Asset.Group.AllowExpression.length);
+	if (A == null) return;
+	if (!A.Property) A.Property = {};
+	var I = A.Asset.Group.AllowExpression.indexOf(A.Property.Expression);
+	let DoNext = expression => {
+		if (Description == true) return expression == null ? DialogFind(Player, "FacialExpressionNone") : DialogFind(Player, "FacialExpression" + expression);
+		CharacterSetFacialExpression(C, AssetGroup, expression);
+	}
+	if (Forward == null || Forward) {
+		if (I + 1 >= A.Asset.Group.AllowExpression.length) return DoNext(null);
+		return DoNext(A.Asset.Group.AllowExpression[I + 1]);
+	} else {
+		if (I == 0) return DoNext(null);
+		if (I < 0) return DoNext(A.Asset.Group.AllowExpression[A.Asset.Group.AllowExpression.length - 1]);
+		return DoNext(A.Asset.Group.AllowExpression[I - 1]);
+	}
+}
+
+// Resets the character's facial expression to the default
+function CharacterResetFacialExpression(C) {
+	for (var A = 0; A < C.Appearance.length; A++)
+		if (C.Appearance[A].Asset.Group.AllowExpression)
+			CharacterSetFacialExpression(C, C.Appearance[A].Asset.Group.Name, null);
 }
